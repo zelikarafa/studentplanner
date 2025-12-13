@@ -8,19 +8,23 @@ class ScheduleService {
   String get _userId => _supabase.auth.currentUser!.id;
 
   // ==========================================
-  // 1. READ SCHEDULES (Jadwal + Data Matkul)
+  // 1. READ SCHEDULES
   // ==========================================
   Future<List<StudyItem>> getSchedules() async {
     try {
       final response = await _supabase
           .from('class_schedules')
-          // Syntax Magic: Ambil semua kolom jadwal, DAN kolom detail dari tabel courses
-          .select('*, courses(name, lecturer, room, color_code)')
+          // PERBAIKAN DISINI:
+          // Gunakan 'course_name' sesuai tabel courses kamu.
+          // Hapus 'color_code' jika di tabel courses tidak ada kolom itu.
+          .select('*, courses(course_name, lecturer, room)')
           .eq('user_id', _userId)
           .order('day_of_week', ascending: true)
           .order('start_time', ascending: true);
 
-      // Konversi data JSON ke List<StudyItem>
+      // Debugging: Cek data mentah di console
+      // print("Data Raw Supabase: $response");
+
       return (response as List).map((e) => StudyItem.fromMap(e)).toList();
     } catch (e) {
       debugPrint('Error fetch schedules: $e');
@@ -29,65 +33,61 @@ class ScheduleService {
   }
 
   // ==========================================
-  // 2. READ COURSES (Untuk Dropdown Matkul)
+  // 2. READ COURSES (Untuk Dropdown)
   // ==========================================
   Future<List<Map<String, dynamic>>> getCoursesForDropdown() async {
-    final response = await _supabase
-        .from('courses')
-        // PERBAIKAN: Ambil 'course_name' sebagai 'name' agar UI tidak error
-        .select('id, course_name')
-        .eq('user_id', _userId)
-        .order('course_name', ascending: true);
+    try {
+      final response = await _supabase
+          .from('courses')
+          .select('id, course_name, room') // Ambil room juga untuk hint
+          .eq('user_id', _userId)
+          .order('course_name', ascending: true);
 
-    // Mapping agar di UI tetap terbaca sebagai 'name'
-    return (response as List).map((item) {
-      return {
-        'id': item['id'],
-        'name':
-            item['course_name'], // Mapping dari database course_name ke key 'name'
-      };
-    }).toList();
+      return (response as List).map((item) {
+        return {
+          'id': item['id'],
+          'name': item['course_name'], // Mapping untuk UI Dropdown
+          'default_room': item['room'], // Simpan room default buat logic UI
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetch courses: $e');
+      return [];
+    }
   }
 
   // ==========================================
-  // 3. INSERT (TAMBAH JADWAL)
+  // 3. INSERT
   // ==========================================
-  // Kita tidak kirim nama/warna, tapi kirim course_id
   Future<void> addSchedule({
-    required String courseId, // UUID dari Dropdown
+    required String courseId,
     required int dayOfWeek,
     required TimeOfDay startTime,
     required TimeOfDay endTime,
-    String? room, // Opsional, override default room
+    String? room,
     String? details,
   }) async {
+    // Validasi sederhana: Ubah string kosong jadi null
+    final finalRoom = (room == null || room.trim().isEmpty) ? null : room;
+    final finalDetails = (details == null || details.trim().isEmpty)
+        ? null
+        : details;
+
     await _supabase.from('class_schedules').insert({
       'user_id': _userId,
       'course_id': courseId,
       'day_of_week': dayOfWeek,
       'start_time': _timeToString(startTime),
       'end_time': _timeToString(endTime),
-      'room': room,
-      'details': details,
+      'room': finalRoom,
+      'details': finalDetails,
     });
-  }
-
-  // ==========================================
-  // 4. DELETE
-  // ==========================================
-  Future<void> deleteSchedule(int scheduleId) async {
-    await _supabase
-        .from('class_schedules')
-        .delete()
-        .eq('id', scheduleId)
-        .eq('user_id', _userId);
   }
 
   // ==========================================
   // HELPER
   // ==========================================
   String _timeToString(TimeOfDay time) {
-    // Format ke HH:mm:00 agar diterima PostgreSQL Time type
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
     return '$h:$m:00';

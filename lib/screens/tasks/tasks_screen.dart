@@ -41,13 +41,15 @@ class _TasksScreenState extends State<TasksScreen> {
   @override
   Widget build(BuildContext context) {
     // FILTER LOGIC
+    // Kita pakai getter isToDo, isMissed, isDone dari Model yang baru
     List<TaskItem> displayedTasks = [];
     if (_activeTabIndex == 0) {
       displayedTasks = _allTasks.where((t) => t.isToDo).toList();
     } else if (_activeTabIndex == 1) {
       displayedTasks = _allTasks.where((t) => t.isMissed).toList();
     } else {
-      displayedTasks = _allTasks.where((t) => t.isCompleted).toList();
+      // Tab Selesai: Pakai isDone (status == 'completed')
+      displayedTasks = _allTasks.where((t) => t.isDone).toList();
     }
 
     return Scaffold(
@@ -60,9 +62,14 @@ class _TasksScreenState extends State<TasksScreen> {
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        automaticallyImplyLeading: false, // HILANGKAN TOMBOL BACK
+
+        // --- 1. TOMBOL BACK (PERBAIKAN) ---
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+        // ----------------------------------
       ),
-      // ⚠️ PERHATIKAN: TIDAK ADA bottomNavigationBar DI SINI LAGI
       body: Column(
         children: [
           Padding(
@@ -92,6 +99,7 @@ class _TasksScreenState extends State<TasksScreen> {
             context,
             MaterialPageRoute(builder: (_) => const AddTaskScreen()),
           );
+          // Refresh kalau ada data baru
           if (result == true) _loadTasks();
         },
         backgroundColor: const Color(0xFF2ACDAB),
@@ -148,18 +156,24 @@ class _TasksScreenState extends State<TasksScreen> {
         borderRadius: BorderRadius.circular(10),
       ),
       child: ListTile(
+        // --- 2. LOGIKA CHECKBOX (PERBAIKAN) ---
         leading: Checkbox(
           activeColor: const Color(0xFF2ACDAB),
-          value: task.isCompleted,
+          // Gunakan .isDone (bukan isCompleted lagi)
+          value: task.isDone,
           onChanged: (val) async {
-            await _taskService.toggleComplete(task.id, task.isCompleted);
-            _loadTasks();
+            // val adalah nilai baru (true/false) yang dikirim ke service
+            if (val != null) {
+              await _taskService.toggleComplete(task.id, val);
+              _loadTasks(); // Refresh UI setelah update
+            }
           },
         ),
         title: Text(
           task.title,
           style: TextStyle(
-            decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+            // Coret tulisan jika isDone
+            decoration: task.isDone ? TextDecoration.lineThrough : null,
             fontWeight: FontWeight.bold,
           ),
         ),

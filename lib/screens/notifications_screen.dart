@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/task_service.dart';
-import '../services/schedule_service.dart'; // Import Schedule Service
+import '../services/schedule_service.dart';
 import '../models/study_item.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -33,9 +33,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       // 1. CEK TUGAS (Deadline H-5 s/d Hari H)
       final tasks = await _taskService.getTasks();
       for (var t in tasks) {
-        if (!t.isCompleted) {
+        // --- PERBAIKAN DISINI ---
+        // Ganti !t.isCompleted menjadi !t.isDone (karena sekarang pakai status)
+        if (!t.isDone) {
           final diff = t.deadline.difference(now).inDays;
 
+          // Tampilkan jika deadline tinggal 5 hari atau kurang (dan belum lewat hari ini)
+          // Atau jika sudah missed (lewat deadline) tapi belum selesai
           if (diff >= 0 && diff <= 5) {
             tempAlerts.add({
               'type': 'Tugas',
@@ -52,7 +56,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       }
 
       // 2. CEK JADWAL KULIAH HARI INI (Reminder 1 Jam Sebelum)
-      // Logika: Ambil jadwal hari ini yang jam mulainya > jam sekarang (belum lewat)
       final schedules = await _scheduleService.getSchedules();
       final todayWeekday = now.weekday;
 
@@ -68,20 +71,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           );
           final diffInMinutes = classTime.difference(now).inMinutes;
 
-          // Tampilkan jika kelas belum dimulai DAN akan mulai dalam < 3 jam (Reminder)
-          // Atau tampilkan semua kelas hari ini yang belum selesai
           if (diffInMinutes > -30) {
-            // Tampilkan jika belum lewat 30 menit dari jam masuk
             String timeLabel = "Segera";
-            if (diffInMinutes > 60)
+            if (diffInMinutes > 60) {
               timeLabel = "${(diffInMinutes / 60).floor()} jam lagi";
-            else if (diffInMinutes > 0)
+            } else if (diffInMinutes > 0) {
               timeLabel = "$diffInMinutes menit lagi";
-            else
+            } else {
               timeLabel = "Sedang Berlangsung";
+            }
 
             tempAlerts.add({
               'type': 'Kelas',
+              // Pastikan properti 'name' dan 'room' ada di StudyItem kamu
               'title': 'Kelas: ${s.name}',
               'details': 'Ruang ${s.room} • $timeLabel',
               'time': s.startTime.format(context),

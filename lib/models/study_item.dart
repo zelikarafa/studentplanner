@@ -1,68 +1,55 @@
 import 'package:flutter/material.dart';
 
 class StudyItem {
-  final int id; // ID dari class_schedules (BigInt)
-  final String courseId; // Relasi ke courses (UUID)
-  final String name; // Nama Mata Kuliah (dari tabel courses)
-  final String lecturerName; // (dari tabel courses)
-  final String room; // Prioritas: room jadwal > room matkul
-  final int dayOfWeek; // 1 = Senin, dst
+  final int id;
+  final String courseId;
+  final String name; // Nama Matkul (Diambil dari tabel courses)
+  final String lecturer; // Dosen (Diambil dari tabel courses)
+  final String room; // Prioritas: Room Jadwal > Room Default Matkul
+  final int dayOfWeek;
   final TimeOfDay startTime;
   final TimeOfDay endTime;
-  final String details;
-  final Color color; // (dari tabel courses)
+  final String? details;
+  final Color color; // Default color jika tidak ada di DB
 
   StudyItem({
     required this.id,
     required this.courseId,
     required this.name,
-    required this.lecturerName,
+    required this.lecturer,
     required this.room,
     required this.dayOfWeek,
     required this.startTime,
     required this.endTime,
-    required this.details,
-    required this.color,
+    this.details,
+    this.color = const Color(0xFF2ACDAB), // Warna default hijau tosca
   });
 
-  // =======================================================
-  // DARI SUPABASE (JSON) → APP (DART OBJECT)
-  // =======================================================
   factory StudyItem.fromMap(Map<String, dynamic> map) {
-    // 1. Ambil data relasi 'courses'
-    // Karena kita pakai select('*, courses(*)') di service
+    // 1. Ambil Data Induk (Mata Kuliah)
+    // Supabase mengembalikan object 'courses' karena kita pakai join
     final courseData = map['courses'] ?? {};
 
-    // 2. Helper parsing Waktu (HH:mm:ss) ke TimeOfDay
+    // 2. Logika Ruangan (Pakai ruangan jadwal, kalau null pakai ruangan default matkul)
+    String finalRoom = map['room'] ?? courseData['room'] ?? 'Belum ditentukan';
+
+    // 3. Parsing Waktu (HH:mm:ss -> TimeOfDay)
     TimeOfDay parseTime(String timeStr) {
       final parts = timeStr.split(':');
       return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
     }
 
-    // 3. Helper parsing Warna Hex (#FF0000) ke Color Obj
-    Color parseColor(String? hexString) {
-      if (hexString == null || hexString.isEmpty) return Colors.blue;
-      try {
-        return Color(int.parse(hexString.replaceFirst('#', '0xFF')));
-      } catch (e) {
-        return Colors.blue;
-      }
-    }
-
-    // 4. Logika Ruangan: Pakai ruangan jadwal, kalau kosong pakai ruangan default matkul
-    String displayRoom = map['room'] ?? courseData['room'] ?? 'TBD';
-
     return StudyItem(
-      id: map['id'], // BigInt otomatis jadi int di Dart
+      id: map['id'],
       courseId: map['course_id'],
-      name: courseData['name'] ?? 'Matkul Dihapus',
-      lecturerName: courseData['lecturer'] ?? '-',
-      room: displayRoom,
-      dayOfWeek: map['day_of_week'] ?? 1,
+      // Hati-hati: Di tabel courses kolomnya 'course_name' sesuai gambar DB kamu
+      name: courseData['course_name'] ?? 'Tanpa Nama',
+      lecturer: courseData['lecturer'] ?? '-',
+      room: finalRoom,
+      dayOfWeek: map['day_of_week'],
       startTime: parseTime(map['start_time']),
       endTime: parseTime(map['end_time']),
-      details: map['details'] ?? '',
-      color: parseColor(courseData['color_code']),
+      details: map['details'],
     );
   }
 }

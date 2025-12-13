@@ -5,16 +5,17 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  # Diperbaiki: Menggunakan rentang eksplisit (lebih disukai)
-  # Pastikan versi Dart SDK Anda ada dalam rentang ini.
   sdk: '>=3.9.2 <4.0.0' 
 
 dependencies:
   flutter:
     sdk: flutter
 
-  # WAJIB: Tambahkan package ini untuk DateFormat dan DateTime
+  # Date & time formatting
   intl: ^0.18.1 
+
+  # SUPABASE (DATABASE + AUTH)
+  supabase_flutter: ^2.5.0
 
   cupertino_icons: ^1.0.8
 
@@ -26,5 +27,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
-  # Tambahkan bagian font atau assets di sini jika diperlukan

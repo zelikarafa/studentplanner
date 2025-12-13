@@ -1,7 +1,57 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final _supabase = Supabase.instance.client;
+
+  String _name = 'Loading...';
+  String _email = '...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final user = _supabase.auth.currentUser;
+    if (user != null) {
+      setState(() {
+        _email = user.email ?? '-';
+      });
+
+      try {
+        final data = await _supabase
+            .from('profiles')
+            .select()
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (data != null && mounted) {
+          setState(() {
+            _name = data['full_name'] ?? 'Mahasiswa';
+          });
+        }
+      } catch (e) {
+        if (mounted) setState(() => _name = 'Mahasiswa');
+      }
+    }
+  }
+
+  Future<void> _signOut() async {
+    await _supabase.auth.signOut();
+    if (mounted) {
+      // Kembali ke Login dan hapus semua history route
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,50 +72,60 @@ class ProfileScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Bagian Profil Atas
+            // FOTO PROFIL
             const CircleAvatar(
               radius: 50,
-              backgroundImage: AssetImage('assets/profile_pic.png'), // Ganti dengan aset Anda
-              child: Icon(Icons.person, size: 60, color: Colors.white), // Placeholder jika aset tidak ada
+              backgroundColor: Color(0xFF2ACDAB),
+              child: Icon(Icons.person, size: 60, color: Colors.white),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Ahmad Dani', // Ganti dengan nama pengguna
-              style: TextStyle(
+
+            // NAMA & EMAIL
+            Text(
+              _name,
+              style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1E2749),
               ),
             ),
-            const Text(
-              'ahmad.dani@email.com',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+            Text(
+              _email,
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
             ),
             const SizedBox(height: 30),
 
-            // Menu Utama
-            _buildProfileMenu(context, Icons.person_outline, 'My Account', () {}),
-            _buildProfileMenu(context, Icons.lock_outline, 'Privacy', () {}),
-            _buildProfileMenu(context, Icons.settings_outlined, 'General', () {}),
-            _buildProfileMenu(context, Icons.help_outline, 'Help & Support', () {}),
-            _buildProfileMenu(context, Icons.info_outline, 'About App', () {}),
-            
+            // MENU DUMMY (Bisa dikembangkan nanti)
+            _buildProfileMenu(
+              context,
+              Icons.person_outline,
+              'Akun Saya',
+              () {},
+            ),
+            _buildProfileMenu(context, Icons.lock_outline, 'Privasi', () {}),
+            _buildProfileMenu(
+              context,
+              Icons.settings_outlined,
+              'Pengaturan',
+              () {},
+            ),
+            _buildProfileMenu(context, Icons.help_outline, 'Bantuan', () {}),
+
             const SizedBox(height: 40),
-            
-            // Tombol Logout
+
+            // TOMBOL LOGOUT
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  // Logika untuk Logout
-                },
+                onPressed: _signOut,
                 icon: const Icon(Icons.logout, color: Colors.red),
                 label: const Text(
                   'Logout',
-                  style: TextStyle(color: Colors.red, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -82,7 +142,12 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProfileMenu(BuildContext context, IconData icon, String title, VoidCallback onTap) {
+  Widget _buildProfileMenu(
+    BuildContext context,
+    IconData icon,
+    String title,
+    VoidCallback onTap,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15.0),
       child: InkWell(

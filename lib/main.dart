@@ -1,21 +1,29 @@
 import 'package:flutter/material.dart';
-// 1. TAMBAHKAN IMPORT DARI PAKET 'intl'
 import 'package:intl/date_symbol_data_local.dart';
-import 'models/study_item.dart';
-import 'models/task_item.dart';
-import 'screens/auth/signin_screen.dart'; 
-import 'screens/home_screen.dart'; 
-// Pastikan semua file di atas sudah di-import dengan path yang benar
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-// 2. JADIKAN main() ASYNC
+// SCREEN IMPORTS
+import 'screens/auth/signin_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/notifications_screen.dart';
+import 'screens/schedule/college_schedule_screen.dart';
+import 'screens/tasks/tasks_screen.dart';
+import 'screens/exams/exam_screen.dart'; // Folder exams baru
+
 void main() async {
-  // Wajib dipanggil jika menggunakan fungsi async sebelum runApp()
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // 3. INISIALISASI DATA LOKALE ('id_ID' untuk Indonesia)
-  // Perbaikan ini menghilangkan LocaleDataException
-  await initializeDateFormatting('id_ID', null); 
-  
+
+  // INIT FORMAT TANGGAL INDONESIA
+  await initializeDateFormatting('id_ID', null);
+
+  // INIT SUPABASE
+  await Supabase.initialize(
+    url: 'https://bkpxlrqzgsezggwxymbo.supabase.co',
+    anonKey:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrcHhscnF6Z3Nlemdnd3h5bWJvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2MzQ2MTYsImV4cCI6MjA4MTIxMDYxNn0.sttuZI38DpYraMB9I-Il29h9k_VhUrhMVcSPpFuPC0Q',
+  );
+
   runApp(const MyApp());
 }
 
@@ -26,96 +34,55 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'My Study Planner',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.teal, 
+        primarySwatch: Colors.teal,
         visualDensity: VisualDensity.adaptivePlatformDensity,
-        fontFamily: 'Roboto', 
+        fontFamily: 'Roboto',
+        // Warna utama aplikasi
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF2ACDAB),
+          primary: const Color(0xFF2ACDAB),
+        ),
       ),
-      home: const SigninScreen(), 
+      // ROUTING / NAVIGASI
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const AuthGate(),
+        '/login': (context) => const SigninScreen(),
+        '/home': (context) => const HomeScreen(),
+        '/schedule': (context) => const CollegeScheduleScreen(),
+        '/exams': (context) => const ExamScreen(),
+        '/tasks': (context) => const TasksScreen(),
+        '/notifications': (context) => const NotificationsScreen(),
+        '/profile': (context) => const ProfileScreen(),
+      },
     );
   }
 }
 
 // =======================================================
-// Data Aplikasi (AppData) - (Tetap Sama)
+// AUTH GATE (AUTO LOGIN)
 // =======================================================
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
 
-class AppData {
-  // List untuk menyimpan Jadwal Kuliah
-  static List<StudyItem> collegeSchedules = [
-    StudyItem(
-      name: 'PEMROGRAMAN MOBILE',
-      startTime: const TimeOfDay(hour: 9, minute: 0),
-      endTime: const TimeOfDay(hour: 10, minute: 0),
-      color: Colors.orange,
-      lecturerName: 'Dr. John Doe',
-      room: 'L-201',
-    ),
-    StudyItem(
-      name: 'STRUKTUR DATA',
-      startTime: const TimeOfDay(hour: 11, minute: 0),
-      endTime: const TimeOfDay(hour: 12, minute: 0),
-      color: Colors.purple,
-      lecturerName: 'Prof. Smith',
-      room: 'R-305',
-    ),
-  ];
+  @override
+  Widget build(BuildContext context) {
+    // StreamBuilder mendengarkan status login secara realtime
+    return StreamBuilder<AuthState>(
+      stream: Supabase.instance.client.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final session = snapshot.data?.session;
 
-  // List untuk menyimpan Jadwal Ujian
-  static List<StudyItem> examSchedules = [
-    StudyItem(
-      name: 'UTS IPSI',
-      startTime: const TimeOfDay(hour: 9, minute: 0),
-      endTime: const TimeOfDay(hour: 10, minute: 0),
-      color: const Color(0xFF4DB6AC),
-      examDate: DateTime(2025, 4, 5), 
-      details: 'Mata Kuliah: IPSI', 
-      lecturerName: 'Ujian',
-      room: 'Aula',
-    ),
-  ];
+        // Jika ada session (sudah login) -> Ke Home
+        if (session != null) {
+          return const HomeScreen();
+        }
 
-  // List untuk menyimpan Tugas
-  static List<TaskItem> tasks = [
-    TaskItem(
-      name: 'IPSI - Tugas 1',
-      dueDate: DateTime(2025, 12, 17), 
-      dueTime: const TimeOfDay(hour: 23, minute: 59),
-      course: 'IPSI',
-      details: 'Create a unique emotional story that describes better than words',
-      color: Colors.lightGreen,
-      status: TaskStatus.to_do,
-    ),
-    TaskItem(
-      name: 'Pemrograman Mobile - Tugas 1',
-      dueDate: DateTime(2025, 12, 17),
-      dueTime: const TimeOfDay(hour: 10, minute: 30),
-      course: 'Pemrograman Mobile',
-      details: 'Create a unique emotional story that describes better than words',
-      color: Colors.lightGreen,
-      status: TaskStatus.completed,
-    ),
-    TaskItem(
-      name: 'UI/UX - Tugas 2 (TELAT)',
-      dueDate: DateTime(2025, 12, 16), 
-      dueTime: const TimeOfDay(hour: 23, minute: 59),
-      course: 'UI/UX',
-      details: 'Create a unique emotional story that describes better than words',
-      color: Colors.redAccent,
-      status: TaskStatus.missed,
-    ),
-  ];
-
-  // Metode untuk menambahkan data baru
-  static void addCollegeSchedule(StudyItem item) {
-    collegeSchedules.add(item);
-  }
-
-  static void addExamSchedule(StudyItem item) {
-    examSchedules.add(item);
-  }
-
-  static void addTask(TaskItem item) {
-    tasks.add(item);
+        // Jika belum login -> Ke Sign In
+        return const SigninScreen();
+      },
+    );
   }
 }

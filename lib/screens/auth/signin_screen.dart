@@ -1,158 +1,235 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../home_screen.dart';
 
-class SigninScreen extends StatelessWidget {
+class SigninScreen extends StatefulWidget {
   const SigninScreen({super.key});
+
+  @override
+  State<SigninScreen> createState() => _SigninScreenState();
+}
+
+class _SigninScreenState extends State<SigninScreen> {
+  // Controllers
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _nameController = TextEditingController(); // Baru: Untuk input nama
+
+  // State
+  bool _isLoading = false;
+  bool _isLogin = true; // True = Mode Login, False = Mode Daftar
+  bool _obscurePassword = true; // Untuk lihat/tutup password
+  String? _errorMessage;
+
+  final supabase = Supabase.instance.client;
+
+  // Fungsi Utama (Login atau Daftar)
+  Future<void> _submit() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final email = _emailController.text.trim();
+      final password = _passwordController.text.trim();
+      final name = _nameController.text.trim();
+
+      // Validasi sederhana
+      if (email.isEmpty || password.isEmpty) {
+        throw const AuthException('Email dan Password wajib diisi.');
+      }
+
+      if (_isLogin) {
+        // --- LOGIKA LOGIN ---
+        final response = await supabase.auth.signInWithPassword(
+          email: email,
+          password: password,
+        );
+
+        if (response.session != null && mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+          );
+        }
+      } else {
+        // --- LOGIKA DAFTAR (SIGN UP) ---
+        if (name.isEmpty) {
+          throw const AuthException('Nama wajib diisi untuk pendaftaran.');
+        }
+
+        await supabase.auth.signUp(
+          email: email,
+          password: password,
+          data: {'full_name': name}, // Simpan nama ke metadata user
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Pendaftaran berhasil! Silakan Login.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          // Kembali ke mode login otomatis setelah daftar
+          setState(() {
+            _isLogin = true;
+          });
+        }
+      }
+    } on AuthException catch (e) {
+      setState(() => _errorMessage = e.message);
+    } catch (e) {
+      setState(() => _errorMessage = 'Terjadi kesalahan jaringan.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 80.0),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Logo Aplikasi
+              // LOGO
               Container(
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  image: const DecorationImage(
-                    image: AssetImage('assets/app_logo.png'), // Ganti dengan path aset logo Anda
-                    fit: BoxFit.cover,
-                  ),
+                  color: const Color(0xFF2ACDAB).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(25),
                 ),
-                // Jika tidak ada aset, gunakan placeholder sederhana
-                child: Center(
-                  child: Image.asset(
-                    'assets/logo.png', // Asumsi file logo ada di assets/logo.png
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: Colors.teal.shade100,
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                      child: const Icon(Icons.school, size: 50, color: Colors.teal),
-                    ),
-                  ),
+                child: const Icon(
+                  Icons.school,
+                  size: 50,
+                  color: Color(0xFF2ACDAB),
                 ),
               ),
               const SizedBox(height: 30),
-              // Judul
-              const Text(
-                'My Study Planner',
-                style: TextStyle(
+
+              Text(
+                _isLogin ? 'Welcome Back!' : 'Create Account',
+                style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1E2749),
                 ),
               ),
               const SizedBox(height: 10),
-              // Deskripsi
-              const Text(
-                'Create a unique emotional story that describes better than words',
+
+              Text(
+                _isLogin
+                    ? 'Masuk untuk mengelola jadwalmu'
+                    : 'Daftar untuk mulai mengatur studimu',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Color(0xFF4C5E78),
-                ),
+                style: const TextStyle(fontSize: 16, color: Color(0xFF4C5E78)),
               ),
-              const SizedBox(height: 50),
-              // Tombol Google Signin
-              OutlinedButton(
-                onPressed: () {
-                  // Simulasi login sukses dan navigasi ke home
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  side: const BorderSide(color: Colors.grey, width: 1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+
+              const SizedBox(height: 40),
+
+              // INPUT NAMA (Hanya muncul saat Mode Daftar)
+              if (!_isLogin) ...[
+                TextField(
+                  controller: _nameController,
+                  decoration: InputDecoration(
+                    hintText: 'Nama Lengkap',
+                    prefixIcon: const Icon(Icons.person_outline),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
-                      'assets/google_logo.png', // Ganti dengan path aset logo Google Anda
-                      height: 24,
-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.login, color: Colors.blue),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'Sign in with Google',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              // Pembatas "Or"
-              const Row(
-                children: [
-                  Expanded(child: Divider(color: Colors.grey)),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Text('Or', style: TextStyle(color: Colors.grey)),
-                  ),
-                  Expanded(child: Divider(color: Colors.grey)),
-                ],
-              ),
-              const SizedBox(height: 20),
-              // Input Email
+                const SizedBox(height: 15),
+              ],
+
+              // EMAIL
               TextField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  hintText: 'd.che.nevsky@gmail.com',
+                  hintText: 'Email',
+                  prefixIcon: const Icon(Icons.email_outlined),
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide.none,
                   ),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 ),
-                controller: TextEditingController(text: 'memek@gmail.com'),
               ),
+
               const SizedBox(height: 15),
-              // Input Password
+
+              // PASSWORD
               TextField(
-                obscureText: true,
+                controller: _passwordController,
+                obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   hintText: 'Password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide.none,
                   ),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 ),
               ),
-              const SizedBox(height: 30),
-              // Tombol Continue
+
+              const SizedBox(height: 20),
+
+              // ERROR MESSAGE
+              if (_errorMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
+              // BUTTON SUBMIT
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Simulasi login sukses dan navigasi ke home
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const HomeScreen()),
-                    );
-                  },
+                  onPressed: _isLoading ? null : _submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2ACDAB),
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -161,15 +238,52 @@ class SigninScreen extends StatelessWidget {
                     ),
                     elevation: 0,
                   ),
-                  child: const Text(
-                    'Continue',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          _isLogin ? 'Login' : 'Sign Up',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // TOGGLE LOGIN / REGISTER
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _isLogin ? "Belum punya akun? " : "Sudah punya akun? ",
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isLogin = !_isLogin;
+                        _errorMessage = null; // Reset error saat ganti mode
+                      });
+                    },
+                    child: Text(
+                      _isLogin ? "Daftar" : "Masuk",
+                      style: const TextStyle(
+                        color: Color(0xFF2ACDAB),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ],
           ),

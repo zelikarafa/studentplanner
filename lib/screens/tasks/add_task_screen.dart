@@ -1,8 +1,6 @@
-// lib/screens/tasks/add_task_screen.dart
-
 import 'package:flutter/material.dart';
-import '../../main.dart';
-import '../../models/task_item.dart';
+import 'package:intl/intl.dart';
+import '../../services/task_service.dart'; // Pastikan path ini benar
 
 class AddTaskScreen extends StatefulWidget {
   const AddTaskScreen({super.key});
@@ -12,281 +10,231 @@ class AddTaskScreen extends StatefulWidget {
 }
 
 class _AddTaskScreenState extends State<AddTaskScreen> {
-  final _nameController = TextEditingController();
+  final _taskService = TaskService(); // Pakai Service
+  final _formKey = GlobalKey<FormState>();
+
+  final _titleController =
+      TextEditingController(); // Ganti name jadi title sesuai DB
   final _detailsController = TextEditingController();
-  DateTime? _dueDate;
-  TimeOfDay? _dueTime;
-  String? _selectedCourse;
-  Color _selectedColor = const Color(0xFF2ACDAB); // Warna default
 
-  final List<String> _courseOptions = ['IPSI', 'Pemrograman Mobile', 'UI/UX', 'Lainnya'];
-  final List<Color> _colorOptions = const [
-    Color(0xFF2ACDAB), // Hijau-Biru default
-    Color(0xFF1E2749), 
-    Color(0xFF3B5998), 
-    Color(0xFF4DB6AC), 
-    Color(0xFF81C784), 
-    Color(0xFFEF5350), 
-    Color(0xFFFFB300), 
-    Color(0xFF9C27B0), 
-  ];
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _courseList = []; // Data Dropdown
+  String? _selectedCourseId;
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+  // Default Deadline: Besok jam 23:59
+  DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 23, minute: 59);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCourses();
+  }
+
+  // Ambil list matkul dari Supabase
+  Future<void> _loadCourses() async {
+    try {
+      final courses = await _taskService.getCoursesForDropdown();
+      if (mounted) {
+        setState(() {
+          _courseList = courses;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      // Handle error silent
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Gabungkan Date & Time Picker
+  Future<void> _pickDateTime() async {
+    final date = await showDatePicker(
       context: context,
-      initialDate: _dueDate ?? DateTime.now(),
+      initialDate: _selectedDate,
       firstDate: DateTime.now(),
       lastDate: DateTime(2030),
     );
-    if (picked != null) {
-      setState(() {
-        _dueDate = picked;
-      });
-    }
-  }
+    if (date == null) return;
 
-  Future<void> _selectTime(BuildContext context) async {
-    final TimeOfDay? picked = await showTimePicker(
+    final time = await showTimePicker(
       context: context,
-      initialTime: _dueTime ?? const TimeOfDay(hour: 23, minute: 59),
+      initialTime: _selectedTime,
     );
-    if (picked != null) {
-      setState(() {
-        _dueTime = picked;
-      });
-    }
+    if (time == null) return;
+
+    setState(() {
+      _selectedDate = date;
+      _selectedTime = time;
+    });
   }
 
-  void _saveTask() {
-    // FIX: Tambahkan pengecekan null untuk _dueTime agar TaskItem dapat dibuat
-    if (_nameController.text.isEmpty || _dueDate == null || _selectedCourse == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nama tugas, tanggal jatuh tempo, dan mata kuliah harus diisi.')),
-      );
+  Future<void> _saveTask() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedCourseId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Harap pilih Mata Kuliah')));
       return;
     }
 
-    final newTask = TaskItem(
-      name: _nameController.text,
-      dueDate: _dueDate!,
-      dueTime: _dueTime, // dueTime sudah nullable dan aman
-      course: _selectedCourse!,
-      details: _detailsController.text,
-      color: _selectedColor,
-      status: TaskStatus.to_do,
-    );
+    setState(() => _isLoading = true);
 
-    // Tambahkan ke data global
-    AppData.addTask(newTask);
+    try {
+      // Gabungkan Date & Time jadi satu DateTime untuk Database
+      final finalDeadline = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tugas berhasil ditambahkan!')),
-    );
-    Navigator.pop(context); // Kembali ke layar sebelumnya
+      await _taskService.addTask(
+        courseId: _selectedCourseId!,
+        title: _titleController.text,
+        details: _detailsController.text,
+        deadline: finalDeadline,
+      );
+
+      if (mounted) {
+        Navigator.pop(context, true); // Return true agar halaman depan refresh
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tambah Tugas', style: TextStyle(color: Colors.black)),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 15.0),
-            child: Icon(Icons.person, color: Colors.black),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            // Input Nama Tugas
-            TextField(
-              controller: _nameController,
-              decoration: _inputDecoration('Name'),
-            ),
-            const SizedBox(height: 20),
-            // Input Tanggal & Waktu Jatuh Tempo
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _selectDate(context),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(10),
+      appBar: AppBar(title: const Text('Tambah Tugas Baru')),
+      body: _isLoading && _courseList.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ================= JUDUL =================
+                    TextFormField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Judul Tugas',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.title),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.flag, color: Color(0xFF2ACDAB)),
-                          const SizedBox(width: 10),
-                          Text(
-                            _dueDate == null ? 'Due Date' : _dueDate!.toLocal().toString().split(' ')[0],
-                            style: TextStyle(
-                              color: _dueDate == null ? Colors.grey : Colors.black,
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 15),
+
+                    // ================= COURSE =================
+                    DropdownButtonFormField<String>(
+                      value: _selectedCourseId,
+                      decoration: const InputDecoration(
+                        labelText: 'Mata Kuliah',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.book),
+                      ),
+                      hint: const Text('Pilih Matkul'),
+                      items: _courseList.map((course) {
+                        return DropdownMenuItem<String>(
+                          value: course['id'].toString(), // ID Matkul UUID
+                          child: Text(course['name']), // Nama Matkul
+                        );
+                      }).toList(),
+                      onChanged: (v) => setState(() => _selectedCourseId = v),
+                    ),
+                    if (_courseList.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 5),
+                        child: Text(
+                          'Belum ada mata kuliah. Tambahkan di menu Jadwal/Database.',
+                          style: TextStyle(color: Colors.red, fontSize: 12),
+                        ),
+                      ),
+                    const SizedBox(height: 15),
+
+                    // ================= DEADLINE =================
+                    InkWell(
+                      onTap: _pickDateTime,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Deadline',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.calendar_today),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              DateFormat('dd MMM yyyy').format(_selectedDate),
+                              style: const TextStyle(fontSize: 16),
                             ),
-                          ),
-                        ],
+                            Text(
+                              _selectedTime.format(context),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _selectTime(context),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(10),
+                    const SizedBox(height: 15),
+
+                    // ================= DETAILS =================
+                    TextFormField(
+                      controller: _detailsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Detail / Catatan',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.notes),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.access_time, color: Color(0xFF2ACDAB)),
-                          const SizedBox(width: 10),
-                          Text(
-                            _dueTime == null ? 'End Time' : _dueTime!.format(context),
-                            style: TextStyle(
-                              color: _dueTime == null ? Colors.grey : Colors.black,
-                            ),
+                      maxLines: 3,
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    // ================= SAVE BUTTON =================
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2ACDAB),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        ],
+                        ),
+                        onPressed: _isLoading ? null : _saveTask,
+                        child: _isLoading
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text(
+                                'SIMPAN TUGAS',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            // Dropdown Mata Kuliah
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 15),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  hintText: 'Mata Kuliah',
-                  contentPadding: EdgeInsets.zero,
-                ),
-                value: _selectedCourse,
-                icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF2ACDAB)),
-                items: _courseOptions.map((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedCourse = newValue;
-                  });
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            // Input Details
-            TextField(
-              controller: _detailsController,
-              maxLines: 5,
-              decoration: _inputDecoration('Details').copyWith(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-              ),
-            ),
-            const SizedBox(height: 30),
-            // Pemilih Warna
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: _colorOptions.map((color) => _buildColorOption(color)).toList(),
-            ),
-            const SizedBox(height: 50),
-            // Tombol Selesai
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saveTask,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2ACDAB),
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  elevation: 0,
-                ),
-                child: const Text(
-                  'Selesai',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF2ACDAB), width: 2),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-    );
-  }
-
-  Widget _buildColorOption(Color color) {
-    bool isSelected = _selectedColor == color;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedColor = color;
-        });
-      },
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: Colors.black, width: 2) : null,
-        ),
-        child: isSelected
-            ? const Center(
-                child: Icon(
-                  Icons.check,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              )
-            : null,
-      ),
     );
   }
 }

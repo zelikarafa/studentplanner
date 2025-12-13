@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; 
-import '../../main.dart'; 
-import 'add_college_schedule_screen.dart'; // Import AddCollegeScheduleScreen yang asli
+import 'package:intl/intl.dart';
+import '../../services/schedule_service.dart';
+import '../../services/exam_service.dart'; // Tambah Service Ujian
 import '../../models/study_item.dart';
-import '../../widgets/bottom_nav_bar.dart'; 
+import '../../models/exam_item.dart';
+import 'add_college_schedule_screen.dart';
 
 class CollegeScheduleScreen extends StatefulWidget {
   const CollegeScheduleScreen({super.key});
@@ -13,190 +14,272 @@ class CollegeScheduleScreen extends StatefulWidget {
 }
 
 class _CollegeScheduleScreenState extends State<CollegeScheduleScreen> {
-  DateTime _currentDate = DateTime.now(); 
-  DateTime _selectedDate = DateTime.now(); 
+  final ScheduleService _scheduleService = ScheduleService();
+  final ExamService _examService = ExamService(); // Service Ujian
 
-  int _selectedIndex = 0; 
+  List<StudyItem> _classSchedules = [];
+  List<ExamItem> _examSchedules = [];
+  bool _isLoading = true;
 
-  void _onItemTapped(int index) {
-    // Navigasi ke halaman utama jika index 0, atau pop untuk navigasi lain
-    if (index == 0) {
-      Navigator.pop(context);
-    } else {
-      Navigator.pop(context);
-      // Di sini Anda mungkin ingin menavigasi ke halaman lain
-      // Misalnya, jika index 1 adalah halaman 'Ujian', maka navigasi ke halaman Ujian.
+  DateTime _currentDate = DateTime.now();
+  DateTime _selectedDate = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAllData();
+  }
+
+  Future<void> _fetchAllData() async {
+    setState(() => _isLoading = true);
+    try {
+      // Ambil Jadwal Kuliah & Ujian Sekaligus
+      final classes = await _scheduleService.getSchedules();
+      final exams = await _examService.getExams();
+
+      if (mounted) {
+        setState(() {
+          _classSchedules = classes;
+          _examSchedules = exams;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Fungsi untuk memfilter dan mengurutkan jadwal
-  List<StudyItem> _getTodaysSchedules() {
-    // Variabel ini tidak digunakan di sini, tapi dipertahankan jika Anda ingin
-    // menambahkan filter hari di masa mendatang.
-    // final int selectedDayOfWeek = _selectedDate.weekday; 
+  // LOGIKA PENGGABUNGAN JADWAL
+  List<dynamic> _getEventsForSelectedDate() {
+    // 1. Ambil Kuliah (Sesuai Hari Mingguan)
+    int selectedDayOfWeek = _selectedDate.weekday;
+    List<StudyItem> todaysClasses = _classSchedules.where((item) {
+      return item.dayOfWeek == selectedDayOfWeek;
+    }).toList();
 
-    List<StudyItem> schedules = AppData.collegeSchedules;
-    
-    // Urutkan berdasarkan waktu mulai (PENTING)
-    schedules.sort((a, b) {
-      int timeA = a.startTime.hour * 60 + a.startTime.minute;
-      int timeB = b.startTime.hour * 60 + b.startTime.minute;
-      return timeA.compareTo(timeB);
+    // 2. Ambil Ujian (Sesuai Tanggal Spesifik)
+    List<ExamItem> todaysExams = _examSchedules.where((item) {
+      return item.examDate.year == _selectedDate.year &&
+          item.examDate.month == _selectedDate.month &&
+          item.examDate.day == _selectedDate.day;
+    }).toList();
+
+    // 3. Gabung jadi satu list dynamic
+    List<dynamic> allEvents = [...todaysClasses, ...todaysExams];
+
+    // 4. Sort berdasarkan jam mulai
+    allEvents.sort((a, b) {
+      TimeOfDay timeA = (a is StudyItem)
+          ? a.startTime
+          : (a as ExamItem).startTime;
+      TimeOfDay timeB = (b is StudyItem)
+          ? b.startTime
+          : (b as ExamItem).startTime;
+      return (timeA.hour * 60 + timeA.minute).compareTo(
+        timeB.hour * 60 + timeB.minute,
+      );
     });
 
-    return schedules;
+    return allEvents;
   }
-  
+
   @override
   Widget build(BuildContext context) {
-    // Set locale untuk DateFormat
     Intl.defaultLocale = 'id_ID';
-
-    final List<StudyItem> schedules = _getTodaysSchedules();
+    final events = _getEventsForSelectedDate();
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Jadwal Kuliah', style: TextStyle(color: Colors.black)),
+        title: const Text(
+          'Kalender Akademik',
+          style: TextStyle(color: Colors.black),
+        ),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 15.0),
-            child: Icon(Icons.person, color: Colors.black),
-          ),
-        ],
+        automaticallyImplyLeading: false,
       ),
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              _buildMonthHeader(),
-              _buildDaySelector(),
-              const Divider(height: 1, color: Colors.grey),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 24.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                       Text(
-                        'Jadwal Kuliah Hari ${DateFormat('EEEE', 'id_ID').format(_selectedDate)}',
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 20),
-                      // Render Jadwal
-                      ..._buildTimelineSchedule(schedules),
-                      const SizedBox(height: 100), // Padding agar konten tidak tertutup tombol
-                    ],
+          // KALENDER HEADER
+          _buildMonthHeader(),
+          _buildDaySelector(),
+          const Divider(height: 1, color: Colors.grey),
+
+          // LIST JADWAL PURE
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : events.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Kosong. Tidak ada jadwal hari ini.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(20),
+                    itemCount: events.length,
+                    itemBuilder: (context, index) {
+                      final event = events[index];
+                      return _buildPureCard(event);
+                    },
                   ),
-                ),
-              ),
-            ],
           ),
-          // --- Tombol Tambah di Kanan Bawah ---
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 24.0, bottom: 20.0), 
-              child: InkWell(
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    // Mengarah ke AddCollegeScheduleScreen yang sudah diimport
-                    MaterialPageRoute(builder: (context) => const AddCollegeScheduleScreen()),
-                  );
-                  // Refresh state setelah kembali dari layar tambah
-                  setState(() {});
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20), 
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF2ACDAB), width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.3),
-                        spreadRadius: 2,
-                        blurRadius: 5,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.add, color: Color(0xFF2ACDAB), size: 20),
-                      SizedBox(width: 5),
-                      Text(
-                        'Tambah',
-                        style: TextStyle(
-                          color: Color(0xFF2ACDAB),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // --------------------------------------------------------
         ],
       ),
-      bottomNavigationBar: BottomNavBar(
-        selectedIndex: _selectedIndex, 
-        onItemTapped: _onItemTapped, 
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddCollegeScheduleScreen()),
+          );
+          if (result == true) _fetchAllData();
+        },
+        backgroundColor: const Color(0xFF2ACDAB),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
+  // CARD MINIMALIS / PURE
+  Widget _buildPureCard(dynamic event) {
+    bool isExam = event is ExamItem;
+    String title = isExam ? event.courseName : (event as StudyItem).name;
+    String room = isExam
+        ? "Lokasi Ujian"
+        : (event as StudyItem).room; // Simplifikasi
+    TimeOfDay start = isExam ? event.startTime : (event as StudyItem).startTime;
+    TimeOfDay end = isExam ? event.endTime : (event as StudyItem).endTime;
+    Color color = isExam ? Colors.redAccent : (event as StudyItem).color;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Indikator Warna & Jam
+          Column(
+            children: [
+              Text(
+                start.format(context),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              Container(
+                width: 2,
+                height: 10,
+                color: Colors.grey.shade300,
+                margin: const EdgeInsets.symmetric(vertical: 2),
+              ),
+              Text(
+                end.format(context),
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(width: 20),
+          // Garis Warna
+          Container(
+            width: 4,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 15),
+          // Info Utama
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    if (isExam)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          "UJIAN",
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        room,
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 13,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Widgets Header Kalender (Tetap sama) ---
   Widget _buildMonthHeader() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10.0),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            DateFormat('MMMM', 'id_ID').format(_currentDate), 
-            style: const TextStyle(
-              fontSize: 28, 
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1E2749),
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => setState(
+              () => _selectedDate = _selectedDate.subtract(
+                const Duration(days: 7),
+              ),
             ),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.grey),
-                onPressed: () {
-                  setState(() {
-                    _currentDate = DateTime(_currentDate.year, _currentDate.month, _currentDate.day - 7);
-                    _selectedDate = _currentDate; 
-                  });
-                },
-              ),
-              Text(
-                DateFormat('yyyy').format(_currentDate), 
-                style: const TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward, color: Colors.grey),
-                onPressed: () {
-                    setState(() {
-                    _currentDate = DateTime(_currentDate.year, _currentDate.month, _currentDate.day + 7);
-                    _selectedDate = _currentDate; 
-                    });
-                },
-              ),
-            ],
+          Text(
+            DateFormat('MMMM yyyy', 'id_ID').format(_selectedDate),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: () => setState(
+              () => _selectedDate = _selectedDate.add(const Duration(days: 7)),
+            ),
           ),
         ],
       ),
@@ -204,243 +287,57 @@ class _CollegeScheduleScreenState extends State<CollegeScheduleScreen> {
   }
 
   Widget _buildDaySelector() {
-    // Kita buat list 7 hari mulai dari hari Senin dari minggu yang dipilih
-    DateTime startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
-    
+    DateTime startOfWeek = _selectedDate.subtract(
+      Duration(days: _selectedDate.weekday - 1),
+    );
     return SizedBox(
-      height: 100,
+      height: 90,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: 17, // Cukup 7 hari untuk representasi mingguan
+        itemCount: 7,
         itemBuilder: (context, index) {
           final date = startOfWeek.add(Duration(days: index));
-          
-          final isSelected = date.day == _selectedDate.day && date.month == _selectedDate.month && date.year == _selectedDate.year;
-
-          return Padding(
-            padding: EdgeInsets.only(left: index == 0 ? 24.0 : 8.0, right: index == 6 ? 24.0 : 8.0),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedDate = date; 
-                });
-              },
-              child: Container(
-                width: 55,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF2ACDAB) : Colors.white,
-                  borderRadius: BorderRadius.circular(15),
-                  boxShadow: isSelected
-                      ? [
-                            BoxShadow(
-                              color: const Color(0xFF2ACDAB).withOpacity(0.5),
-                              spreadRadius: 1,
-                              blurRadius: 5,
-                              offset: const Offset(0, 3),
-                            )
-                          ]
-                      : null,
-                  border: isSelected ? null : Border.all(color: Colors.grey.shade300),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      date.day.toString(),
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.black,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
+          final isSelected =
+              date.day == _selectedDate.day &&
+              date.month == _selectedDate.month;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedDate = date),
+            child: Container(
+              width: 50,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF2ACDAB)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                border: isSelected
+                    ? null
+                    : Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    DateFormat('E', 'id_ID').format(date),
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.grey,
+                      fontSize: 12,
                     ),
-                    Text(
-                      DateFormat('EEE', 'id_ID').format(date), 
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.grey.shade600,
-                        fontSize: 14,
-                      ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    date.day.toString(),
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           );
         },
-      ),
-    );
-  }
-
-  // Mengganti _buildScheduleTimes menjadi _buildTimelineSchedule untuk timeline yang lebih baik
-  List<Widget> _buildTimelineSchedule(List<StudyItem> schedules) {
-    List<Widget> scheduleWidgets = [];
-    final int startHour = 7; // Mulai jam 7 pagi
-    final int endHour = 18; // Sampai jam 6 sore (18:00)
-
-    // Jika tidak ada jadwal sama sekali
-    if (schedules.isEmpty) {
-        scheduleWidgets.add(
-            const Padding(
-                padding: EdgeInsets.only(top: 50.0),
-                child: Center(
-                    child: Text(
-                        'Tidak ada jadwal kuliah yang ditambahkan.',
-                        style: TextStyle(color: Colors.grey, fontSize: 16),
-                    ),
-                ),
-            )
-        );
-        return scheduleWidgets;
-    }
-
-    Set<StudyItem> processedSchedules = {};
-
-    for (int i = startHour; i <= endHour; i++) {
-      // PERBAIKAN: Menggunakan TimeOfDay untuk pemformatan waktu
-      TimeOfDay timeAnchor = TimeOfDay(hour: i, minute: 0); 
-      final materialLocalizations = MaterialLocalizations.of(context);
-      
-      // Menggunakan formatTimeOfDay untuk mendapatkan label waktu yang benar (e.g. 9:00 AM)
-      String formattedTime = materialLocalizations.formatTimeOfDay(timeAnchor, alwaysUse24HourFormat: false);
-      
-      // Memangkas label waktu (e.g., dari "9:00 AM" menjadi "9AM")
-      String timeLabel = formattedTime.replaceAll(':00', '').replaceAll(' ', '');
-      if (timeLabel.endsWith('AM') || timeLabel.endsWith('PM')) {
-        timeLabel = timeLabel.replaceAll(' ', '');
-      } else {
-        timeLabel = formattedTime.split(':').first;
-      }
-
-
-      List<StudyItem> itemsAtTime = schedules.where((e) {
-        // Cek apakah item dimulai di jam ini dan belum diproses (untuk menghindari duplikasi)
-        return !processedSchedules.contains(e) && e.startTime.hour == i;
-      }).toList();
-
-      scheduleWidgets.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 50,
-                child: Text(
-                  timeLabel, // Menggunakan label waktu yang sudah diformat
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: itemsAtTime.map((item) {
-                    processedSchedules.add(item); 
-                    return _buildScheduleCard(item);
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-      
-      // Garis pemisah antar jam
-      if (i < endHour) {
-        scheduleWidgets.add(
-          const Padding(
-            padding: EdgeInsets.only(left: 60),
-            child: Divider(color: Colors.grey),
-          ),
-        );
-      }
-    }
-
-    return scheduleWidgets;
-  }
-
-  Widget _buildScheduleCard(StudyItem item) {
-    // Menggunakan MaterialLocalizations untuk format waktu yang konsisten
-    String formatTime(TimeOfDay time) {
-        final materialLocalizations = MaterialLocalizations.of(context);
-        return materialLocalizations.formatTimeOfDay(time, alwaysUse24HourFormat: false);
-    }
-
-    String timeRange = '${formatTime(item.startTime)} - ${formatTime(item.endTime)}';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: item.color,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: [
-           // PERBAIKAN: BoxShadow tidak boleh const karena menggunakan item.color
-           BoxShadow(
-            // PERBAIKAN: Ganti 'withOpacity' yang deprecated (jika ada)
-            color: item.color.withOpacity(0.3), 
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Waktu: $timeRange',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                Text(
-                  'Nama Dosen: ${item.lecturerName}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                Text(
-                  'Ruangan: ${item.room}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Fitur Edit ${item.name} belum diimplementasikan.')),
-                  );
-                },
-                child: const Icon(Icons.edit, color: Colors.white, size: 18),
-              ),
-              const SizedBox(width: 10),
-              GestureDetector(
-                onTap: () {
-                  // Logika hapus
-                  setState(() {
-                    AppData.collegeSchedules.remove(item);
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${item.name} dihapus.')),
-                  );
-                },
-                child: const Icon(Icons.delete, color: Colors.white, size: 18),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

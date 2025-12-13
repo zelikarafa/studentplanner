@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../widgets/bottom_nav_bar.dart';
+
+// IMPORT HALAMAN
 import 'schedule/college_schedule_screen.dart';
-import 'schedule/exam_schedule_screen.dart'; // Pastikan impor ini ada
+import 'exams/exam_screen.dart';
 import 'tasks/tasks_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
-import '../models/task_item.dart'; // Import TaskStatus
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,13 +20,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
-  // Daftar Layar untuk Navigasi Bawah
+  // DAFTAR HALAMAN (3 Tab Utama)
   final List<Widget> _screens = [
-    const HomeContent(), // Isi Beranda
-    Container(color: Colors.blue.shade50, child: const Center(child: Text("Kalender"))), // Placeholder Kalender
-    // FIX: Menggunakan TaskStatus.to_do yang benar
-    TasksScreen(initialStatus: TaskStatus.to_do), // Arahkan ke Layar Tugas
-    const NotificationsScreen(), // Layar Pemberitahuan
+    const HomeContent(),
+    const CollegeScheduleScreen(),
+    const NotificationsScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -35,7 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: IndexedStack(index: _selectedIndex, children: _screens),
       bottomNavigationBar: BottomNavBar(
         selectedIndex: _selectedIndex,
         onItemTapped: _onItemTapped,
@@ -44,148 +45,204 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// Isi Layar Beranda
-class HomeContent extends StatelessWidget {
+// =======================================================
+// WIDGET ISI BERANDA (CLEAN MODE)
+// =======================================================
+class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
 
   @override
+  State<HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<HomeContent> {
+  final _supabase = Supabase.instance.client;
+  String _userName = 'Mahasiswa';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final user = _supabase.auth.currentUser;
+    if (user != null) {
+      try {
+        final data = await _supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .maybeSingle();
+        if (data != null && mounted)
+          setState(() => _userName = data['full_name'] ?? 'Mahasiswa');
+      } catch (_) {}
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(24, 60, 24, 40),
-            color: Colors.white,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Hi, Name!',
-                  style: TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E2749),
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // HEADER HIJAU
+            Container(
+              padding: const EdgeInsets.fromLTRB(24, 60, 24, 40),
+              decoration: const BoxDecoration(
+                color: Color(0xFF2ACDAB), // Hijau utama
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(30),
+                  bottomRight: Radius.circular(30),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Selamat Datang,',
+                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _userName,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
+                  GestureDetector(
+                    onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const ProfileScreen()),
-                    );
-                  },
-                  child: const CircleAvatar(
-                    // backgroundImage: AssetImage('assets/profile_pic.png'), 
-                    radius: 20,
-                    child: Icon(Icons.person, color: Colors.white, size: 24),
+                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                      ),
+                      child: const CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.grey,
+                        child: Icon(Icons.person, color: Colors.white),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                _buildMenuItem(
-                  context,
-                  title: 'Jadwal Kuliah',
-                  icon: Icons.book,
-                  color: const Color(0xFFFEE8BD),
-                  iconColor: const Color(0xFFE99C0D),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const CollegeScheduleScreen()), 
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
-                _buildMenuItem(
-                  context,
-                  title: 'Jadwal Ujian',
-                  icon: Icons.school,
-                  color: const Color(0xFFDDFFD2),
-                  iconColor: const Color(0xFF389B03),
-                  onTap: () {
-                    // FIX: ExamScheduleScreen() sudah dipanggil dengan benar
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const ExamScheduleScreen()), 
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
-                _buildMenuItem(
-                  context,
-                  title: 'Tugas',
-                  icon: Icons.assignment,
-                  color: const Color(0xFFE0E0FF),
-                  iconColor: const Color(0xFF6B4EE6),
-                  onTap: () {
-                    // Pindah ke tab Tugas di Bottom Nav Bar (indeks 2)
-                    (context.findAncestorStateOfType<_HomeScreenState>()?._onItemTapped(2)); 
-                  },
-                ),
-              ],
+
+            const SizedBox(height: 40),
+
+            // MENU GRID (Hanya ini isinya)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. JADWAL (Pindah Tab)
+                  _buildBigMenu(
+                    context,
+                    'Jadwal',
+                    Icons.calendar_today,
+                    const Color(0xFFFFF3E0),
+                    const Color(0xFFFFA726),
+                    1,
+                  ),
+
+                  // 2. TUGAS (Buka Halaman)
+                  _buildBigMenu(
+                    context,
+                    'Tugas',
+                    Icons.assignment,
+                    const Color(0xFFE3F2FD),
+                    const Color(0xFF42A5F5),
+                    () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TasksScreen()),
+                      );
+                    },
+                  ),
+
+                  // 3. UJIAN (Buka Halaman)
+                  _buildBigMenu(
+                    context,
+                    'Ujian',
+                    Icons.school,
+                    const Color(0xFFE8F5E9),
+                    const Color(0xFF66BB6A),
+                    () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ExamScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMenuItem(
-    BuildContext context, {
-    required String title,
-    required IconData icon,
-    required Color color,
-    required Color iconColor,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildBigMenu(
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color bg,
+    Color iconColor,
+    dynamic target,
+  ) {
     return InkWell(
-      onTap: onTap,
-      child: Container(
-        height: 100,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(15),
-          boxShadow: [
-            BoxShadow(
-              // Penggunaan withOpacity(0.1) sudah benar
-              color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 2,
-              blurRadius: 5,
-              offset: const Offset(0, 3),
+      onTap: () {
+        if (target is int) {
+          context.findAncestorStateOfType<_HomeScreenState>()?._onItemTapped(
+            target,
+          );
+        } else if (target is Function) {
+          target();
+        }
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 90,
+            height: 90, // Lebih besar biar enak ditekan
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+              ],
             ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        child: Row(
-          children: [
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Icon(icon, size: 30, color: iconColor),
-              ),
+            child: Center(child: Icon(icon, size: 40, color: iconColor)),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Color(0xFF1E2749),
             ),
-            const SizedBox(width: 20),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1E2749),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

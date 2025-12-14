@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+// PASTIKAN PATH INI SUDAH BENAR SESUAI STRUKTUR FOLDER ANDA
 import '../services/task_service.dart';
 import '../services/schedule_service.dart';
 import '../models/study_item.dart';
@@ -16,11 +17,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   final _scheduleService = ScheduleService();
 
   bool _isLoading = true;
+  // Menggunakan List<dynamic> karena berisi data Map
   List<Map<String, dynamic>> _alerts = [];
 
   @override
   void initState() {
     super.initState();
+    // Set locale ke Indonesia untuk format TimeOfDay (HH:mm)
+    Intl.defaultLocale = 'id_ID';
     _loadNotifications();
   }
 
@@ -33,23 +37,43 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       // 1. CEK TUGAS (Deadline H-5 s/d Hari H)
       final tasks = await _taskService.getTasks();
       for (var t in tasks) {
-        // --- PERBAIKAN DISINI ---
-        // Ganti !t.isCompleted menjadi !t.isDone (karena sekarang pakai status)
-        if (!t.isDone) {
-          final diff = t.deadline.difference(now).inDays;
+        // Cek hanya tugas yang belum Selesai
+        if (t.status != 'Selesai') {
+          // Jarak waktu sampai deadline
+          final diff = t.deadline.difference(now);
+          final diffInDays = diff.inDays;
 
-          // Tampilkan jika deadline tinggal 5 hari atau kurang (dan belum lewat hari ini)
-          // Atau jika sudah missed (lewat deadline) tapi belum selesai
-          if (diff >= 0 && diff <= 5) {
+          // Tampilkan jika deadline <= 5 hari atau jika deadline sudah lewat
+          // (diffInDays negatif), tapi belum lebih dari 7 hari (agar tidak menumpuk)
+          if (diffInDays >= -7 && diffInDays <= 5) {
+            // Tentukan label waktu
+            String timeLabel;
+            Color taskColor;
+            IconData taskIcon = Icons.assignment_late_outlined;
+
+            if (diffInDays < 0) {
+              // Lewat Deadline (Missed)
+              timeLabel = "LEWAT TENGGAT";
+              taskColor = Colors.red.shade700;
+              taskIcon = Icons.cancel_outlined;
+            } else if (diffInDays == 0) {
+              // Hari H
+              timeLabel = "Hari ini!";
+              taskColor = Colors.red;
+            } else {
+              // H-1 sampai H-5
+              timeLabel = "$diffInDays hari lagi";
+              taskColor = Colors.orange;
+            }
+
             tempAlerts.add({
               'type': 'Tugas',
               'title': 'Deadline: ${t.title}',
-              'details':
-                  '${t.courseName} - ${diff == 0 ? "Hari ini!" : "$diff hari lagi"}',
+              'details': '${t.courseName} - $timeLabel',
               'time': DateFormat('HH:mm').format(t.deadline),
               'date': t.deadline, // Untuk sorting
-              'color': Colors.orange,
-              'icon': Icons.assignment_late_outlined,
+              'color': taskColor,
+              'icon': taskIcon,
             });
           }
         }
@@ -69,33 +93,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             s.startTime.hour,
             s.startTime.minute,
           );
+
           final diffInMinutes = classTime.difference(now).inMinutes;
 
+          // Hanya tampilkan jika kelas dimulai/sedang berlangsung (sampai 30 menit setelah mulai)
           if (diffInMinutes > -30) {
-            String timeLabel = "Segera";
-            if (diffInMinutes > 60) {
-              timeLabel = "${(diffInMinutes / 60).floor()} jam lagi";
-            } else if (diffInMinutes > 0) {
+            String timeLabel;
+            Color classColor = const Color(0xFF2ACDAB);
+
+            if (diffInMinutes < 0) {
+              timeLabel = "Sedang Berlangsung";
+            } else if (diffInMinutes <= 60) {
               timeLabel = "$diffInMinutes menit lagi";
             } else {
-              timeLabel = "Sedang Berlangsung";
+              // Jika lebih dari 60 menit, tampilkan dalam jam
+              int hours = (diffInMinutes / 60).floor();
+              timeLabel = "$hours jam lagi";
             }
 
             tempAlerts.add({
               'type': 'Kelas',
-              // Pastikan properti 'name' dan 'room' ada di StudyItem kamu
               'title': 'Kelas: ${s.name}',
               'details': 'Ruang ${s.room} • $timeLabel',
               'time': s.startTime.format(context),
               'date': classTime,
-              'color': const Color(0xFF2ACDAB),
+              'color': classColor,
               'icon': Icons.class_outlined,
             });
           }
         }
       }
 
-      // Sort berdasarkan waktu (paling dekat paling atas)
+      // Sort berdasarkan waktu (paling dekat/segera paling atas)
       tempAlerts.sort(
         (a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime),
       );
@@ -107,6 +136,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         });
       }
     } catch (e) {
+      // Lebih baik menggunakan debugPrint daripada print di Flutter
+      debugPrint("Error loading notifications: $e");
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -176,19 +207,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Icon Box
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: (notif['color'] as Color).withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(notif['icon'], color: notif['color']),
+            // Pastikan 'icon' bertipe IconData
+            child: Icon(
+              notif['icon'] as IconData,
+              color: notif['color'] as Color,
+            ),
           ),
           const SizedBox(width: 15),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Type & Time
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -197,7 +234,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: notif['color'],
+                        color: notif['color'] as Color,
                       ),
                     ),
                     Text(
@@ -210,6 +247,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ],
                 ),
                 const SizedBox(height: 5),
+                // Title
                 Text(
                   notif['title'],
                   style: const TextStyle(
@@ -219,6 +257,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                 ),
                 const SizedBox(height: 3),
+                // Details
                 Text(
                   notif['details'],
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade600),

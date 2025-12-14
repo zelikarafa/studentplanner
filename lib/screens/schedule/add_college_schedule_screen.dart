@@ -1,8 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../../models/study_item.dart';
 import '../../services/schedule_service.dart';
 
+// --- Wajib Ada: EXTENSION UNTUK TimeOfDay ---
+extension TimeOfDayExtension on TimeOfDay {
+  String format(BuildContext context) {
+    final now = DateTime.now();
+    final dt = DateTime(now.year, now.month, now.day, hour, minute);
+    return DateFormat('HH:mm').format(dt);
+  }
+}
+// --- Akhir Extension ---
+
 class AddCollegeScheduleScreen extends StatefulWidget {
-  const AddCollegeScheduleScreen({super.key});
+  final StudyItem? initialData;
+
+  const AddCollegeScheduleScreen({super.key, this.initialData});
 
   @override
   State<AddCollegeScheduleScreen> createState() =>
@@ -12,9 +26,9 @@ class AddCollegeScheduleScreen extends StatefulWidget {
 class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
   final _scheduleService = ScheduleService();
 
-  // Form State
+  // State
   String? _selectedCourseId;
-  int _selectedDay = 1; // 1 = Senin
+  int _selectedDay = 1;
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
   final _roomController = TextEditingController();
@@ -23,11 +37,31 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
   // Data Logic
   List<Map<String, dynamic>> _courses = [];
   bool _isLoading = true;
+  bool get _isEditing => widget.initialData != null;
 
   @override
   void initState() {
     super.initState();
+
+    // Inisialisasi data untuk Edit
+    if (_isEditing) {
+      final item = widget.initialData!;
+      _selectedCourseId = item.courseId;
+      _selectedDay = item.dayOfWeek;
+      _startTime = item.startTime;
+      _endTime = item.endTime;
+      // Gunakan null-aware operator untuk room/details yang mungkin null
+      _roomController.text = item.room ?? '';
+      _detailsController.text = item.details ?? '';
+    }
     _loadCourses();
+  }
+
+  @override
+  void dispose() {
+    _roomController.dispose();
+    _detailsController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCourses() async {
@@ -49,20 +83,40 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _scheduleService.addSchedule(
-        courseId: _selectedCourseId!,
-        dayOfWeek: _selectedDay,
-        startTime: _startTime,
-        endTime: _endTime,
-        room: _roomController.text,
-        details: _detailsController.text,
-      );
+      if (_isEditing) {
+        // Panggil updateSchedule yang baru ditambahkan
+        await _scheduleService.updateSchedule(
+          scheduleId:
+              widget.initialData!.id, // Menggunakan ID yang sudah pasti ada
+          courseId: _selectedCourseId!,
+          dayOfWeek: _selectedDay,
+          startTime: _startTime,
+          endTime: _endTime,
+          room: _roomController.text,
+          details: _detailsController.text,
+        );
+      } else {
+        // Mode Tambah Baru
+        await _scheduleService.addSchedule(
+          courseId: _selectedCourseId!,
+          dayOfWeek: _selectedDay,
+          startTime: _startTime,
+          endTime: _endTime,
+          room: _roomController.text,
+          details: _detailsController.text,
+        );
+      }
 
       if (mounted) {
-        // PENTING: Kirim 'true' agar halaman depan me-refresh data
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Jadwal berhasil disimpan!')),
+          SnackBar(
+            content: Text(
+              _isEditing
+                  ? 'Jadwal berhasil diperbarui!'
+                  : 'Jadwal berhasil disimpan!',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -79,22 +133,24 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          "Tambah Jadwal",
-          style: TextStyle(color: Colors.black),
+        title: Text(
+          _isEditing ? "Edit Jadwal" : "Tambah Jadwal",
+          style: const TextStyle(color: Colors.black),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF2ACDAB)),
+            )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. DROPDOWN MATKUL
+                  // ... (Form input Matkul, Hari, Jam, Ruangan, Catatan sama)
                   const Text(
                     "Mata Kuliah",
                     style: TextStyle(fontWeight: FontWeight.bold),
@@ -112,24 +168,15 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
                       ),
                     ),
                     items: _courses.map((course) {
+                      // Casting aman untuk Dropdown
                       return DropdownMenuItem<String>(
-                        value: course['id'],
-                        child: Text(course['name']),
+                        value: course['id'] as String?,
+                        child: Text(course['name'] as String? ?? 'N/A'),
                       );
                     }).toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedCourseId = val;
-                        // Optional: Auto-fill room kalau user pilih matkul
-                        // final selected = _courses.firstWhere((c) => c['id'] == val);
-                        // if (selected['default_room'] != null) {
-                        //   _roomController.text = selected['default_room'];
-                        // }
-                      });
-                    },
+                    onChanged: (val) => setState(() => _selectedCourseId = val),
                   ),
 
-                  // Link ke Master Data jika list kosong
                   if (_courses.isEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
@@ -141,7 +188,6 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
 
                   const SizedBox(height: 20),
 
-                  // 2. HARI
                   const Text(
                     "Hari",
                     style: TextStyle(fontWeight: FontWeight.bold),
@@ -168,26 +214,28 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
 
                   const SizedBox(height: 20),
 
-                  // 3. JAM MULAI & SELESAI
                   Row(
                     children: [
                       Expanded(
-                        child: _buildTimePicker("Jam Mulai", _startTime, (val) {
-                          setState(() => _startTime = val);
-                        }),
+                        child: _buildTimePicker(
+                          "Jam Mulai",
+                          _startTime,
+                          (val) => setState(() => _startTime = val),
+                        ),
                       ),
                       const SizedBox(width: 15),
                       Expanded(
-                        child: _buildTimePicker("Jam Selesai", _endTime, (val) {
-                          setState(() => _endTime = val);
-                        }),
+                        child: _buildTimePicker(
+                          "Jam Selesai",
+                          _endTime,
+                          (val) => setState(() => _endTime = val),
+                        ),
                       ),
                     ],
                   ),
 
                   const SizedBox(height: 20),
 
-                  // 4. RUANGAN (Optional)
                   const Text(
                     "Ruangan (Opsional)",
                     style: TextStyle(fontWeight: FontWeight.bold),
@@ -205,7 +253,6 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
 
                   const SizedBox(height: 20),
 
-                  // 5. CATATAN
                   const Text(
                     "Catatan",
                     style: TextStyle(fontWeight: FontWeight.bold),
@@ -224,7 +271,6 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
 
                   const SizedBox(height: 30),
 
-                  // TOMBOL SIMPAN
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -236,12 +282,32 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      child: const Text(
-                        "Simpan Jadwal",
-                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      child: Text(
+                        _isEditing ? "Perbarui Jadwal" : "Simpan Jadwal",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
                       ),
                     ),
                   ),
+
+                  if (_isEditing)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 15.0),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          // ✅ PERBAIKAN 3: ID di StudyItem adalah int
+                          onPressed: () =>
+                              _deleteSchedule(widget.initialData!.id),
+                          child: const Text(
+                            'Hapus Jadwal',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -263,6 +329,18 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
             final picked = await showTimePicker(
               context: context,
               initialTime: time,
+              builder: (context, child) {
+                return Theme(
+                  data: Theme.of(context).copyWith(
+                    colorScheme: ColorScheme.light(
+                      primary: const Color(0xFF2ACDAB),
+                      onPrimary: Colors.white,
+                      onSurface: Colors.black,
+                    ),
+                  ),
+                  child: child!,
+                );
+              },
             );
             if (picked != null) onPicked(picked);
           },
@@ -283,5 +361,46 @@ class _AddCollegeScheduleScreenState extends State<AddCollegeScheduleScreen> {
         ),
       ],
     );
+  }
+
+  // ✅ PERBAIKAN 4: Ubah tipe scheduleId menjadi int
+  Future<void> _deleteSchedule(int scheduleId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Konfirmasi Hapus'),
+        content: const Text('Apakah Anda yakin ingin menghapus jadwal ini?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      try {
+        await _scheduleService.deleteSchedule(scheduleId);
+        if (mounted) {
+          Navigator.pop(context, true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Jadwal berhasil dihapus.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Gagal menghapus: $e')));
+        }
+      }
+    }
   }
 }

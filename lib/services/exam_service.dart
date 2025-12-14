@@ -11,9 +11,9 @@ class ExamService {
     try {
       final response = await _supabase
           .from('exam_schedules')
-          .select('*, courses(course_name)') // JOIN ke courses
+          .select('*, courses(course_name)')
           .eq('user_id', _userId)
-          .order('exam_date', ascending: true); // Urutkan tanggal terdekat
+          .order('exam_date', ascending: true);
 
       return (response as List).map((e) => ExamItem.fromMap(e)).toList();
     } catch (e) {
@@ -28,18 +28,21 @@ class ExamService {
     required DateTime date,
     required TimeOfDay startTime,
     required TimeOfDay endTime,
+    required String room, // ✅ Parameter Ruangan
     required String details,
     required String notes,
   }) async {
-    // Helper TimeOfDay ke String "HH:mm:00"
     String formatTime(TimeOfDay t) => '${t.hour}:${t.minute}:00';
+    final String? validCourseId = (courseId.isEmpty) ? null : courseId;
 
     await _supabase.from('exam_schedules').insert({
       'user_id': _userId,
-      'course_id': courseId,
-      'exam_date': date.toIso8601String(),
+      'course_id': validCourseId,
+      // ✅ PENTING: .toUtc() biar tanggal ga geser
+      'exam_date': date.toUtc().toIso8601String(),
       'start_time': formatTime(startTime),
       'end_time': formatTime(endTime),
+      'room': room, // ✅ Simpan Ruangan
       'details': details,
       'notes': notes,
     });
@@ -50,16 +53,20 @@ class ExamService {
     await _supabase.from('exam_schedules').delete().eq('id', id);
   }
 
-  // 4. AMBIL LIST MATKUL (Dropdown)
+  // 4. AMBIL LIST MATKUL
   Future<List<Map<String, dynamic>>> getCoursesForDropdown() async {
-    final response = await _supabase
-        .from('courses')
-        .select('id, course_name')
-        .eq('user_id', _userId)
-        .order('course_name', ascending: true);
+    try {
+      final response = await _supabase
+          .from('courses')
+          .select('id, course_name')
+          .eq('user_id', _userId)
+          .order('course_name', ascending: true);
 
-    return (response as List)
-        .map((item) => {'id': item['id'], 'name': item['course_name']})
-        .toList();
+      return (response as List)
+          .map((item) => {'id': item['id'], 'name': item['course_name']})
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 }

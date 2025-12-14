@@ -14,7 +14,8 @@ class _AddExamScreenState extends State<AddExamScreen> {
   final _formKey = GlobalKey<FormState>();
 
   final _detailsController = TextEditingController();
-  final _notesController = TextEditingController(); // Khusus Notes
+  final _roomController = TextEditingController();
+  final _notesController = TextEditingController();
 
   bool _isLoading = true;
   List<Map<String, dynamic>> _courses = [];
@@ -40,12 +41,11 @@ class _AddExamScreenState extends State<AddExamScreen> {
     }
   }
 
-  // Helper Pickers
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime(2030),
     );
     if (picked != null) setState(() => _selectedDate = picked);
@@ -82,6 +82,9 @@ class _AddExamScreenState extends State<AddExamScreen> {
         date: _selectedDate,
         startTime: _startTime,
         endTime: _endTime,
+        room: _roomController.text.isEmpty
+            ? "Belum ditentukan"
+            : _roomController.text,
         details: _detailsController.text,
         notes: _notesController.text,
       );
@@ -99,7 +102,12 @@ class _AddExamScreenState extends State<AddExamScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Tambah Jadwal Ujian')),
+      appBar: AppBar(
+        title: const Text('Tambah Jadwal Ujian'),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -108,7 +116,7 @@ class _AddExamScreenState extends State<AddExamScreen> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    // 1. DROPDOWN
+                    // 1. DROPDOWN MATKUL
                     DropdownButtonFormField<String>(
                       value: _selectedCourseId,
                       decoration: const InputDecoration(
@@ -141,7 +149,7 @@ class _AddExamScreenState extends State<AddExamScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // 3. WAKTU
+                    // 3. WAKTU (START - END)
                     Row(
                       children: [
                         Expanded(
@@ -173,7 +181,28 @@ class _AddExamScreenState extends State<AddExamScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // 4. NOTES & DETAILS
+                    // 4. JENIS UJIAN (Details)
+                    TextFormField(
+                      controller: _detailsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Jenis Ujian (UTS / UAS)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 5. RUANGAN
+                    TextFormField(
+                      controller: _roomController,
+                      decoration: const InputDecoration(
+                        labelText: 'Ruangan',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.room),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 6. NOTES
                     TextFormField(
                       controller: _notesController,
                       decoration: const InputDecoration(
@@ -182,18 +211,9 @@ class _AddExamScreenState extends State<AddExamScreen> {
                         prefixIcon: Icon(Icons.note_alt),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _detailsController,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Detail Tambahan',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
                     const SizedBox(height: 24),
 
-                    // 5. BUTTON
+                    // 7. TOMBOL SIMPAN
                     SizedBox(
                       width: double.infinity,
                       height: 50,
